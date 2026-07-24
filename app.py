@@ -126,18 +126,21 @@ class HandTrackerApp:
         self._recording = None  # active PoseRecorder/MotionRecorder session, if any
 
     def _check_camera_available(self):
-        """Probe the camera before the (slow) model download and MediaPipe
+        """Open the camera before the (slow) model download and MediaPipe
         init, so a missing/busy webcam fails immediately instead of after
-        several seconds of unrelated setup."""
-        probe = cv2.VideoCapture(self.config["camera_index"])
-        available = probe.isOpened()
-        probe.release()
-        if not available:
+        several seconds of unrelated setup. The handle is kept open and
+        reused by run() instead of releasing and reopening it, since some
+        drivers are slow to release a device and a quick reopen can
+        spuriously fail."""
+        cap = cv2.VideoCapture(self.config["camera_index"])
+        if not cap.isOpened():
+            cap.release()
             raise RuntimeError(
                 f"Could not open camera index {self.config['camera_index']}. "
                 "Check that a webcam is connected, not in use by another app, "
                 "and that camera_index in config.json matches it."
             )
+        self._cap = cap
 
     # -- recording -------------------------------------------------------
 
@@ -266,6 +269,20 @@ class HandTrackerApp:
 
     # -- cursor control ----------------------------------------------------
 
+    def _abort_cursor_control_failsafe(self):
+        """Called when pyautogui's fail-safe fires (real mouse slammed into
+        a screen corner). Disables cursor control and releases any
+        in-progress drag instead of letting the exception crash the whole
+        app, matching the README's "immediately abort cursor control"
+        promise."""
+        self.cursor_enabled = False
+        self.smoother.reset()
+        if self._dragging:
+            self.cursor.mouse_up()
+            self._dragging = False
+        self.toast.show("Fail-safe: cursor control disabled")
+        print("Fail-safe triggered (mouse hit a screen corner); cursor control disabled.", file=sys.stderr)
+
     def _run_cursor_control(self, raw_points, states):
         mode = gesture_modes.classify_mode(states)
         entered, exited = self.mode_tracker.update(mode)
@@ -380,11 +397,9 @@ class HandTrackerApp:
     # -- main loop -------------------------------------------------------------
 
     def run(self):
-        cap = cv2.VideoCapture(self.config["camera_index"])
+        cap = self._cap
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config["frame_width"])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config["frame_height"])
-        if not cap.isOpened():
-            raise RuntimeError(f"Could not open camera index {self.config['camera_index']}")
 
         window_name = "Hand Tracker"
         prev_time = time.time()
@@ -418,7 +433,10 @@ class HandTrackerApp:
                     dwell_progress = None
 
                     if is_controlling_hand:
-                        mode, dwell_progress = self._run_cursor_control(hand.landmarks, states)
+                        try:
+                            mode, dwell_progress = self._run_cursor_control(hand.landmarks, states)
+                        except self.cursor.failsafe_exception:
+                            self._abort_cursor_control_failsafe()
                     elif self.recognition_enabled and self._recording is None:
                         match = self.recognizer.match(hand.handedness, flat, buffer)
                         if match is not None:
