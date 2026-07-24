@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Downloaded on first run by src/setup_model.py
+models/*.task
+
+# Runtime user data
+data/actions.json
+data/action_log.csv
+
+venv/
+.venv/

@@ -1,0 +1,22 @@
+{
+  "actions": [
+    {
+      "name": "Thumbs Up",
+      "kind": "pose",
+      "hand": "Any",
+      "template": [0.0],
+      "threshold": 0.18,
+      "trigger": { "log": true, "print": true, "command": null },
+      "created_at": 0
+    },
+    {
+      "name": "Wave Hello",
+      "kind": "motion",
+      "hand": "Right",
+      "template": [[0.0]],
+      "threshold": 0.22,
+      "trigger": { "log": true, "print": true, "command": "notify-send 'Hello!'" },
+      "created_at": 0
+    }
+  ]
+}
